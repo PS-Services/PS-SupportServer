@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -9,17 +10,25 @@ namespace PSS.SupportServer
         public ClientHandler(ClientBundle bundle)
         {
             Bundle = bundle;
-            Bundle.Processor.Pong += Pong;
-            PingTimer = new Timer(o => {});
+            Bundle.Processor.Pong += PongHandler;
+            Bundle.Processor.Disconnect += ClientDisconnect;
+            PingTimer = new Timer(o => { });
         }
 
-        private void Pong(System.Text.Json.JsonDocument obj)
+        private void ClientDisconnect(JsonDocument obj)
+        {
+            Bundle.Dispose();
+        }
+
+        private void PongHandler(System.Text.Json.JsonDocument obj)
         {
             PingTimer = new Timer(Ping, null, TimeSpan.FromSeconds(30), TimeSpan.Zero);
         }
 
         public async void HandleClient()
         {
+            Console.WriteLine($"Accepted connection from: {Bundle.Address}");
+
             await PingTimer.DisposeAsync();
             PingTimer = new Timer(Ping, null, TimeSpan.FromSeconds(30), TimeSpan.Zero);
 
@@ -41,8 +50,14 @@ namespace PSS.SupportServer
                 await Task.Delay(150);
             }
 
-            Console.WriteLine($"Bundle.IsConnected: {Bundle.IsConnected}");
-            Console.WriteLine($"Bundle.Token.IsCancellationRequested: {Bundle.Token.IsCancellationRequested}");
+            if (Bundle.IsConnected)
+            {
+                Bundle.SendDisconnect();
+            }
+            else
+            {
+                Console.WriteLine($"Lost connection from {Bundle.Address}");
+            }
 
             Dispose();
         }
@@ -98,6 +113,15 @@ namespace PSS.SupportServer
             try
             {
                 PingTimer.Dispose();
+            }
+            catch
+            {
+                // Ignore
+            }
+
+            try
+            {
+                PongTimer?.Dispose();
             }
             catch
             {

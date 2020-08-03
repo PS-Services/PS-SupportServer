@@ -14,10 +14,11 @@ namespace PSS.SupportServer
         private readonly X509Certificate2 _cert = 
             new X509Certificate2("server.pfx", "password");
 
-        private readonly TcpClient _client;
         private readonly NetworkStream _netStream;  // Raw-data stream of connection.
         private readonly SslStream _ssl;            // Encrypts connection using SSL.
         private bool _disposed;
+        private string _address;
+        public TcpClient Client { get; }
         public ServerMessageProcessor Processor { get; }
         public BinaryReader Reader { get; }
         public BinaryWriter Writer { get; }
@@ -35,21 +36,30 @@ namespace PSS.SupportServer
                 _cert = new X509Certificate2(certFile, certPassword);
             }
 
-            this._client = client;
+            this.Client = client;
             _netStream = client.GetStream();
             _ssl = new SslStream(_netStream, false);
             _ssl.AuthenticateAsServer(_cert, false, 
-                SslProtocols.Tls, true);
+                SslProtocols.Tls12, true);
 
             Reader = new BinaryReader(_ssl, Encoding.UTF8);
             Writer = new BinaryWriter(_ssl, Encoding.UTF8);
 
             Processor = new ServerMessageProcessor(Writer, Token);
         }
+        internal void SendDisconnect()
+        {
+            Writer.Write("{ \"MessageType\": \"Disconnect\" }");
+            Writer.Flush();
 
-        public bool IsConnected => _client?.Connected ?? false;
+            Dispose();
+        }
+
+        public bool IsConnected => Client?.Connected ?? false;
 
         public bool Available => _netStream.DataAvailable;
+        public string Address => _address ??=
+            Client.Client.RemoteEndPoint?.Serialize().ToString() ?? "Unknown";
 
         public void Dispose()
         {
@@ -92,7 +102,7 @@ namespace PSS.SupportServer
 
                 try
                 {
-                    _client?.Dispose();
+                    Client?.Dispose();
                 }
                 catch
                 {

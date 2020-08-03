@@ -29,7 +29,7 @@ namespace PSS.SupportModule
         {
             //var powerShell = new GetPSSessionCommand().Invoke<PssCmdlet>().FirstOrDefault();
 
-                var supportClient = new SupportClient(this);
+                var supportClient = SupportClient.Create(this);
 
                 supportClient.Connect(Uri);
 

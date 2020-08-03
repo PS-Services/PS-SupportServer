@@ -44,11 +44,24 @@ namespace PSS.SupportServer
 
             handler = messageTypeString switch
             {
+                "Disconnect" => DisconnectHandler,
                 "Pong" => PongHandler,
+                "Ping" => PingHandler,
                 _ => UnknownMessage
             };
 
             handler?.Invoke(document);
+        }
+
+        private void DisconnectHandler(JsonDocument document)
+        {
+            Disconnect?.Invoke(document);
+        }
+
+        private void PingHandler(JsonDocument document)
+        {
+            Writer.Write("{ \"MessageType\": \"Pong\" }");
+            Writer.Flush();
         }
 
         private void PongHandler(JsonDocument document)
@@ -61,6 +74,7 @@ namespace PSS.SupportServer
         }
 
         public event Action<JsonDocument> Pong;
+        public event Action<JsonDocument> Disconnect;
 
         private static void UnknownMessage(JsonDocument document) =>
             throw new ApplicationException($"Unknown Message: {document}");

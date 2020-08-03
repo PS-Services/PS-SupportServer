@@ -3,8 +3,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Management.Automation;
-using System.Management.Automation.Runspaces;
-using System.Text.Json;
+using Newtonsoft.Json;
 
 namespace PSS.SupportModule
 {
@@ -13,8 +12,8 @@ namespace PSS.SupportModule
         public ConnectSupportServicesCommand PssCmdlet { get; }
         public BinaryWriter Writer { get; }
 
-        public ConcurrentDictionary<string, Action<JsonDocument>> Handlers { get; } =
-            new ConcurrentDictionary<string, Action<JsonDocument>>();
+        public ConcurrentDictionary<string, Action<string>> Handlers { get; } =
+            new ConcurrentDictionary<string, Action<string>>();
 
         public ClientMessageProcessor(ConnectSupportServicesCommand pssCmdlet, BinaryWriter writer)
         {
@@ -26,29 +25,27 @@ namespace PSS.SupportModule
         {
             try
             {
-                PssCmdlet.WriteVerbose(data);
+                PssCmdlet.WriteDebug(data);
 
-                var document = JsonDocument.Parse(data, new JsonDocumentOptions
-                {
-                    AllowTrailingCommas = true,
-                    CommentHandling = JsonCommentHandling.Skip
-                });
+                dynamic document = JsonConvert.DeserializeObject(data);
 
-                var messageTypeString = document.RootElement.GetProperty("MessageType").GetString();
+                string messageTypeString = document.MessageType;
 
                 if (Handlers.TryGetValue(messageTypeString, out var handler))
                 {
-                    handler(document);
+                    handler(data);
                     return;
                 }
 
                 handler = messageTypeString switch
                 {
+                    "Disconnect" => DisconnectHandler,
+                    "Pong" => PongHandler,
                     "Ping" => PingHandler,
                     _ => UnknownMessage
                 };
 
-                handler?.Invoke(document);
+                handler?.Invoke(data);
             }
             catch(Exception ex)
             {
@@ -56,15 +53,14 @@ namespace PSS.SupportModule
             }
         }
 
-        private void PingHandler(JsonDocument document)
+        private void DisconnectHandler(string json)
         {
-            var ms = new MemoryStream();
-            var jsonWriter = new Utf8JsonWriter(ms);
-            document.WriteTo(jsonWriter);
-            jsonWriter.Flush();
-            ms.Seek(0, SeekOrigin.Begin);
+            PssCmdlet.WriteVerbose("Handling Server Disconnect.");
+            Disconnect?.Invoke(json);
+        }
 
-            var json = new StreamReader(ms).ReadToEnd();
+        private void PingHandler(string json)
+        {
 
             var psObject = new InformationRecord(json, nameof(ClientMessageProcessor));
 
@@ -74,7 +70,17 @@ namespace PSS.SupportModule
             Writer.Flush();
         }
 
-        private void UnknownMessage(JsonDocument document) =>
-            throw new ApplicationException($"Unknown Message: {document}");
+        private void PongHandler(string json)
+        {
+            PssCmdlet.WriteDebug("Got the PONG!");
+
+            Pong?.Invoke(json);
+        }
+
+        public event Action<string> Pong;
+        public event Action<string> Disconnect;
+
+        private void UnknownMessage(string json) =>
+            throw new ApplicationException($"Unknown Message: {json}");
     }
 }
